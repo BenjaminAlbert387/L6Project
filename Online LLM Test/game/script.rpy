@@ -40,7 +40,7 @@ init python:
         }
 
         payload = {
-            "model": "deepseek/deepseek-r1t2-chimera:free",
+            "model": "deepseek/deepseek-chat-v3.1:free",
             "messages": [
                 {
                     "role": "system",
@@ -120,7 +120,6 @@ init python:
         ai_choices = get_ai_choices_with_points(scenario_text, num_choices)
         loading = False
 
-
 # ========================
 # CALLABLE LABEL FOR AI CHOICES
 # ========================
@@ -138,7 +137,6 @@ label ai_choice(scenario_text, num_choices=3):
     $ player_points += selected_choice["points"]
 
     return selected_choice
-
 
 # ========================
 # SCREENS
@@ -160,6 +158,14 @@ screen ai_choice_screen(choices):
         for c in choices:
             if c["text"].startswith("(No response"):
                 textbutton c["text"] action NullAction() sensitive False
+            # 🔒 Locked choice
+            if "🔒" in c["text"]:
+                textbutton c["text"]:
+                    background "#AAAAAA"
+                    text_color "#555555"
+                    insensitive_background "#AAAAAA"
+                    padding (10, 10, 10, 10)
+                    sensitive False
             else:
                 textbutton c["text"] action Return(c):
                     background "#FFFFFF"
@@ -193,45 +199,7 @@ label start:
     image bg classroom = "images/school.jpg"
 
     scene bg classroom with fade
-
-    "The classroom is quiet as you sit near the window."
-    "Your classmate turns to you, smiling."
-    "Your classmate asks: 'Hey, what are you doing after school?'"
-
-    call ai_choice("Your classmate asks: 'Hey, what are you doing after school?'", num_choices=2)
-    $ selected_choice = _return
-
-    "You chose: [selected_choice['text']] (+[selected_choice['points']] points, total: [player_points])"
-
-    if selected_choice["points"] >= 2:
-        "Your classmate grins. 'Awesome! Let's go together.'"
-    elif selected_choice["points"] >= 0:
-        "They nod, seeming neutral about your answer."
-    else:
-        "You hesitate, unsure of what to say. The moment passes."
-
-    "The bell rings, and the day continues."
-
-    "Later that evening, your phone buzzes with a message from your classmate."
-    "They text: 'Hey! Wanna talk more about today?'"
-
-    call ai_choice("Your classmate texts: 'Hey! Wanna talk more about today?'", num_choices=4)
-    $ selected_choice = _return
-
-    "You replied: [selected_choice['text']] (+[selected_choice['points']] points, total: [player_points])"
-
-    if selected_choice["points"] >= 2:
-        "Your classmate quickly responds, 'Yay! Can't wait to hang out again soon!'"
-    elif selected_choice["points"] >= 0:
-        "They reply with a simple 'Thanks!'"
-    else:
-        "You don't respond, and the conversation fades away."
-
-    if player_points >= 4:
-        "You feel a strong connection forming with your classmate."
-    else:
-        "You wonder what tomorrow might bring."
-
+    
     "Act 1: It Begins to Unfold"
     "You wake up to a new day, ready for whatever comes next."
     "As you walk to the train station, you remember you actually haven't bought a ticket yet."
@@ -276,10 +244,50 @@ label start:
     "Suddenly, you feel a tap on your shoulder."
     "Panicking, you turn around to see...a random person?!"
 
-    call ai_choice("A random person taps you on the shoulder, what do you do?", num_choices=3)
+    call ai_choice("A random person taps you on the shoulder, what do you say?", num_choices=3)
     $ selected_choice = _return
 
     "You chose: [selected_choice['text']] (+[selected_choice['points']] points, total: [player_points])"
 
-    "The end."
+    "Well, that was unexpected."
+    "Whatever, you think to yourself as you continue walking to class."
+    "I'm just a totally normal student after all."
+    "Totally normal student with social anxiety, that is..."
+
+    "As you enter the classroom, you go towards your seat."
+    "Back left corner, as always. Hide from the world."
+    "Or at least try to. Someone is already sitting there."
+    "The only other empty seats are in the front row. Great."
+
+    "{b}Depending on your choices so far, some dialogue options may be unlocked!{/b}"
+
+    # --- Start AI loading manually ---
+    $ import threading
+    $ threading.Thread(target=get_ai_choices_thread, args=("Someone is sitting in your favourite seat, what do you do?", 3)).start()
+    show screen ai_loading
+    while loading:
+        $ renpy.pause(0.1, hard=True)
+    hide screen ai_loading
+
+    # --- Add unlockable choice before showing screen ---
+    if player_points >= 4:
+        $ ai_choices.append({"text": "{b}Secret choice: Tell them to move it!{/b}", "points": 3})
+    else:
+        $ ai_choices.append({"text": "🔒 Tell them to move it! (Requires more confidence!)", "points": 0})
+
+    if player_points < 0:
+        $ ai_choices.append({"text": "{b}Secret choice: Silently stare at them until they go{/b}", "points": 1})
+    else:
+        $ ai_choices.append({"text": "🔒 Silently stare at them until they go (Requires less confidence!)", "points": 0})
+
+    # --- Show the combined choice screen ---
+    call screen ai_choice_screen(ai_choices)
+    $ selected_choice = _return
+
+    # --- Apply points ---
+    $ player_points += selected_choice["points"]
+    "You chose: [selected_choice['text']] (+[selected_choice['points']] points, total: [player_points])"
+
+    "And so continues another day in the life of a socially anxious high school student..."
+    "The End...For Now."
     return
