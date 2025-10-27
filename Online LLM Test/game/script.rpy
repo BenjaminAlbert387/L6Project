@@ -17,11 +17,14 @@ init python:
     # --- GAME STATE ---
     ai_choices = []
     loading = False
+    ai_reaction_text = ""
+    loading_reaction = False
     dot_count = 0
     loading_text_base = "AI is thinking"
     player_points = 0
     max_points = 20
     ai_last_error = ""  # Store last error here
+    
 
     # --- LOADING DOTS ---
     def increment_dots():
@@ -120,6 +123,54 @@ init python:
         ai_choices = get_ai_choices_with_points(scenario_text, num_choices)
         loading = False
 
+    # --- GET AI REACTION ---
+    def get_ai_reaction(scenario_text, player_choice):
+        global ai_last_error
+
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "model": "deepseek/deepseek-chat-v3.1:free",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a high school student in a visual novel. "
+                        "React naturally to the player's choice in one to two sentences. "
+                        "If the player seems confident, respond warmly. "
+                        "If they seem anxious, respond gently or awkwardly."
+                        "Speak in the first person as the NPC."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"Scenario: {scenario_text}\nPlayer chose: {player_choice}"
+                }
+            ],
+            "temperature": 0.8,
+            "max_output_tokens": 500
+        }
+
+        try:
+            resp = requests.post(API_URL, headers=headers, json=payload, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            ai_text = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            return ai_text if ai_text else "(No reaction)"
+        except Exception as e:
+            ai_last_error = f"AI reaction error: {e}"
+            renpy.log(ai_last_error)
+            return "(AI failed to respond)"
+
+    def get_ai_reaction_thread(scenario_text, player_choice):
+        global ai_reaction_text, loading_reaction
+        loading_reaction = True
+        ai_reaction_text = get_ai_reaction(scenario_text, player_choice)
+        loading_reaction = False
+
 # ========================
 # CALLABLE LABEL FOR AI CHOICES
 # ========================
@@ -138,11 +189,23 @@ label ai_choice(scenario_text, num_choices=3):
 
     return selected_choice
 
+label ai_reaction(scenario_text, player_choice):
+    $ import threading
+    $ threading.Thread(target=get_ai_reaction_thread, args=(scenario_text, player_choice)).start()
+
+    show screen ai_loading
+    while loading_reaction:
+        $ renpy.pause(0.1, hard=True)
+    hide screen ai_loading
+
+    # Return the AI’s text to the caller
+    return ai_reaction_text
+
 # ========================
 # SCREENS
 # ========================
 screen ai_loading():
-    if loading:
+    if loading or loading_reaction:
         frame:
             xalign 0.5
             yalign 0.5
@@ -208,6 +271,8 @@ label start:
     "'What are you doing? Here to buy a ticket? You can use either the ticket machine or go to the ticket booth.' they ask."
 
     menu:
+        "What do you do?"
+
         "Go to the ticket machine.":
             "You head over to the ticket machine and quickly purchase your ticket."
             "Feeling relieved, you make your way to the platform."
@@ -223,9 +288,11 @@ label start:
     "You get on, finding a seat by the window."
     "Out of the corner of your eye, you notice someone familiar boarding the train."
     "At least, you think you recognize them?"
-    "What do you do? It would be so embarrassing if you were wrong..."
+    "It would be so embarrassing if you were wrong..."
 
     menu:
+        "What do you do?"
+
         "Ignore them and stay in your seat.":
             "You decide it's best not to make a scene."
             "The train ride continues uneventfully."
@@ -288,6 +355,30 @@ label start:
     $ player_points += selected_choice["points"]
     "You chose: [selected_choice['text']] (+[selected_choice['points']] points, total: [player_points])"
 
+    "You see your friend sitting alone at lunch."
+    $ scenario_text = "You see your friend sitting alone at lunch."
+    menu:
+        "What do you say? The AI will generate responses"
+
+        "Sure, let's hang out!":
+            $ player_choice = "Sure, let's hang out!"
+            $ player_points += 2
+            call ai_reaction(scenario_text, player_choice)
+            $ ai_reaction_text = _return
+        "I might study later.":
+            $ player_choice = "I might study later."
+            $ player_points += 0
+            call ai_reaction(scenario_text, player_choice)
+            $ ai_reaction_text = _return
+        "No, I don't want to talk.":
+            $ player_choice = "No, I don't want to talk."
+            $ player_points += -2
+            call ai_reaction(scenario_text, player_choice)
+            $ ai_reaction_text = _return
+    
+    # Display the AI reaction
+    "NPC: [ai_reaction_text]"
+    "Your confidence points are now [player_points]."
+    
     "And so continues another day in the life of a socially anxious high school student..."
     "The End...For Now."
-    return
